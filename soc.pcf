@@ -1,0 +1,56 @@
+set_io clk J3
+set_io rst J4
+
+#set_io leds[7] B5  # D9
+#set_io leds[6] B4  # D8
+#set_io leds[5] A2  # D7
+#set_io leds[4] A1  # D6
+#set_io leds[3] C5  # D5
+#set_io leds[2] C4  # D4
+#set_io leds[1] B3  # D3
+#set_io leds[0] C3  # D2
+
+set_io ext_mem_valid C16
+set_io ext_mem_ready B16
+
+set_io ext_mem_addr[0] D16
+set_io ext_mem_addr[1] D14
+set_io ext_mem_addr[2] E16
+set_io ext_mem_addr[3] D15
+set_io ext_mem_addr[4] F16
+set_io ext_mem_addr[5] E14
+set_io ext_mem_addr[6] G16
+set_io ext_mem_addr[7] F15
+
+set_io ext_mem_rdata[0] A2
+set_io ext_mem_rdata[1] A1
+set_io ext_mem_rdata[2] B4
+set_io ext_mem_rdata[3] B3 
+set_io ext_mem_rdata[4] B5
+set_io ext_mem_rdata[5] C3 
+set_io ext_mem_rdata[6] A5
+set_io ext_mem_rdata[7] C4
+set_io ext_mem_rdata[8] B6
+set_io ext_mem_rdata[9] C5
+set_io ext_mem_rdata[10] A6
+set_io ext_mem_rdata[11] C6
+set_io ext_mem_rdata[12] B7
+set_io ext_mem_rdata[13] C7
+set_io ext_mem_rdata[14] B8
+set_io ext_mem_rdata[15] A7
+set_io ext_mem_rdata[16] A9
+set_io ext_mem_rdata[17] B9
+set_io ext_mem_rdata[18] A10
+set_io ext_mem_rdata[19] C9
+set_io ext_mem_rdata[20] A11
+set_io ext_mem_rdata[21] B10
+set_io ext_mem_rdata[22] B12
+set_io ext_mem_rdata[23] B11
+set_io ext_mem_rdata[24] B13
+set_io ext_mem_rdata[25] B14
+set_io ext_mem_rdata[26] A15
+set_io ext_mem_rdata[27] B15
+set_io ext_mem_rdata[28] N16
+set_io ext_mem_rdata[29] M15
+set_io ext_mem_rdata[30] P16
+set_io ext_mem_rdata[31] P15

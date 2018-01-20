@@ -1,1 +1,8 @@
 soc_syn.v
+*.log
+*.rpt
+*.asc
+*.vcd
+*.test
+*.blif
+*.bin
