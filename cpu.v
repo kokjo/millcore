@@ -50,23 +50,25 @@ module cpu (
     );
 
     localparam  ST_FETCH=0,
-                ST_WAIT_MEM=1,
+                //ST_WAIT_MEM=1,
                 ST_DECODE=2,
                 ST_ALU=3,
-                ST_NEXT=4,
-                ST_BRANCH=5,
-                ST_MEM=6,
-                ST_MEM_WRITE=7,
-                ST_MEM_READ=8;
+                ST_ALUI=4,
+                ST_NEXT=5,
+                ST_BRANCH=6,
+                ST_MEM=7,
+                ST_MEM_WRITE=8,
+                ST_MEM_READ=9;
 
     localparam  OP_DROP=0,
                 OP_DROPREL=1,
                 OP_ALU=2,
-                OP_BRANCH=3,
-                OP_MEM=4;
+                OP_ALUI=3,
+                OP_BRANCH=4,
+                OP_MEM=5;
 
     always @(posedge clk) if(rst) begin
-            pc <= 32'h01000000;
+            pc <= RESET_PC;
             state <= ST_FETCH;
             belt_drop <= 0;
             mem_valid <= 0;
@@ -75,9 +77,9 @@ module cpu (
             inst <= 0;
         end else case(state)
         ST_FETCH: begin
+            belt_drop <= 0;
             if(!mem_ready) begin
                 mem_valid <= 1;
-                belt_drop <= 0;
                 mem_addr <= pc;
             end else begin
                 pc <= pc + 4;
@@ -99,6 +101,7 @@ module cpu (
                 state <= ST_FETCH;
             end
             OP_ALU: state <= ST_ALU;
+            OP_ALUI: state <= ST_ALUI;
             OP_BRANCH: state <= ST_BRANCH;
             OP_MEM: state <= ST_MEM;
         endcase
@@ -110,40 +113,43 @@ module cpu (
                 3'h2: if(belt_rdata1 == 0) pc <= belt_rdata2; // b.z r1, r2
                 3'h2: if(belt_rdata1 == 0) pc <= pc+imm16_sx; // b.z r1, r2
                 4'h4: pc <= belt_rdata2;                      // jmp r2
-                4'h5: pc <= pc + imm16_sx                     // jmp off
+                4'h5: pc <= pc + imm16_sx;                    // jmp off
             endcase
             state <= ST_FETCH;
         end
 
         ST_MEM: begin
+            mem_valid <= 1;
             mem_addr <= belt_rdata1[31:2];
             if(subop[3]) begin
                 case(subop[2:0])
                     0: begin // write dword
                         mem_wdata <= belt_rdata2;
                         mem_wstrb <= 4'b1111;
+                        state <= ST_MEM_WRITE;
                     end
                     1: begin //write word
                         mem_wdata <= belt_rdata2 << (belt_rdata1[1]*16);
                         mem_wstrb <= 4'b0011 << (belt_rdata1[1]*2);
+                        state <= ST_MEM_WRITE;
                     end
                     2: begin // write byte
                         mem_wdata <= belt_rdata2 << (belt_rdata1[1:0]*8);
-                        mem_wstrb <= 2'b0001 << (belt_rdata1[1:0]);
+                        mem_wstrb <= 4'b0001 << (belt_rdata1[1:0]);
+                        state <= ST_MEM_WRITE;
                     end
-                    3: begin // bad instruction
-                        mem_wdata <= 32'hxxxxxxxx;
+                    3: begin // xchg dword
+                        mem_wdata <= belt_rdata2;
                         mem_wstrb <= 0;
+                        state <= ST_MEM_READ; // read previous value.
                     end
                 endcase
-                state <= ST_MEM_WRITE;
             end else begin
-                mem_valid <= 1;
                 state <= ST_MEM_READ;
             end
         end
 
-        ST_MEM_WRITE: begin
+        ST_MEM_WRITE: if(mem_ready) begin
             mem_valid <= 0;
             mem_wstrb <= 0;
             state <= ST_FETCH;
@@ -151,40 +157,76 @@ module cpu (
 
         ST_MEM_READ: if(mem_ready) begin
             case(subop[2:0])
-                0: begin 
-                    belt_wdata <= mem_rdata;
-                    belt_drop <= 1;
-                end
-                1: begin
-                    belt_wdata <= mem_rdata >> (belt_rdata1[1]*16);
-                    belt_drop <= 1;
-                end
-                2: begin
-                    belt_wdata <= mem_rdata >> (belt_rdata1[1:0]*8);
-                    belt_drop <= 1;
-                end
-                3: begin
-                    belt_wdata <= 32'hxxxxxxxx;
-                    belt_drop <= 0;
-                end
+                0: belt_wdata <= mem_rdata; // read dword
+                1: belt_wdata <= mem_rdata >> (belt_rdata1[1]*16); // read word
+                2: belt_wdata <= mem_rdata >> (belt_rdata1[1:0]*8); // read word
+                3: belt_wdata <= mem_rdata; // read dword / xchg instruction from write.
             endcase
             mem_valid <= 0;
+            mem_wstrb <= 0;
+            belt_drop <= 1;
             state <= ST_FETCH;
         end
 
         ST_ALU: begin
             case(subop)
-                4'h0: belt_wdata <= belt_rdata1 + belt_rdata2;
-                4'h1: belt_wdata <= belt_rdata1 - belt_rdata2;
-                4'h2: belt_wdata <= belt_rdata1 | belt_rdata2;
-                4'h3: belt_wdata <= belt_rdata1 & belt_rdata2;
-                4'h4: belt_wdata <= belt_rdata1 ^ belt_rdata2;
-                4'h5: belt_wdata <= belt_rdata1 == belt_rdata2;
-                4'h6: belt_wdata <= belt_rdata1 <= belt_rdata2;
+                4'h0: belt_wdata <= belt_rdata1 + belt_rdata2;  // add r1, r2
+                4'h1: belt_wdata <= belt_rdata1 - belt_rdata2;  // sub r1, r2
+                4'h2: belt_wdata <= belt_rdata1 | belt_rdata2;  // or  r1, r2
+                4'h3: belt_wdata <= belt_rdata1 & belt_rdata2;  // and r1, r2
+                4'h4: belt_wdata <= belt_rdata1 ^ belt_rdata2;  // xor r1, r2
+                4'h5: belt_wdata <= belt_rdata1 == belt_rdata2; // eq  r1, r2
+                4'h6: belt_wdata <= belt_rdata1 <= belt_rdata2; // leq r1, r2
+                default: belt_wdata <= 32'hxxxxxxxx;
+            endcase
+            belt_drop <= 1;
+            state <= ST_FETCH;
+        end
+
+        ST_ALUI: begin
+            case(subop)
+                4'h0: belt_wdata <= belt_rdata1 + imm16_sx;  // add r1, imm
+                4'h1: belt_wdata <= belt_rdata1 - imm16_sx;  // sub r1, imm
+                4'h2: belt_wdata <= belt_rdata1 | imm16_sx;  // or  r1, imm
+                4'h3: belt_wdata <= belt_rdata1 & imm16_sx;  // and r1, imm
+                4'h4: belt_wdata <= belt_rdata1 ^ imm16_sx;  // xor r1, imm
+                4'h5: belt_wdata <= belt_rdata1 == imm16_sx; // eq  r1, imm
+                4'h6: belt_wdata <= belt_rdata1 <= imm16_sx; // leq r1, imm
                 default: belt_wdata <= 32'hxxxxxxxx;
             endcase
             belt_drop <= 1;
             state <= ST_FETCH;
         end
     endcase
+endmodule
+
+module belt (clk, rst, drop, wdata, r1, rdata1, r2, rdata2);
+    input clk, rst;
+
+    input drop;
+    input [31:0] wdata;
+
+    input [3:0] r1;
+    output reg [31:0] rdata1;
+
+    input [3:0] r2;
+    output reg [31:0] rdata2;
+
+    reg [31:0] belt [0:15];
+    reg [3:0] idx;
+
+
+    always @(posedge clk) begin
+        if(rst) begin
+            idx <= 0;
+        end else begin
+            rdata1 <= belt[(idx-r1-1) & 4'hf];
+            rdata2 <= belt[(idx-r2-1) & 4'hf];
+
+            if(drop) begin
+                belt[idx] <= wdata;
+                idx <= idx + 1;
+            end
+        end
+    end
 endmodule
