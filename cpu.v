@@ -1,8 +1,13 @@
 module cpu (
+    // clock and reset
     clk, rst,
-    mem_valid, mem_ready, mem_addr, mem_rdata, mem_wdata, mem_wstrb
+    // memory master interface
+    mem_valid, mem_ready, mem_addr, mem_rdata, mem_wdata, mem_wstrb,
+    // coprocessor interface
+    cpi_valid, cpi_ready, cpi_wait, cpi_inst, cpi_r1, cpi_r2, cpi_data, cpi_drop
 );
     parameter RESET_PC = 32'h00000000;
+    parameter CPI_ENABLE = 1;
 
     input clk, rst;
 
@@ -12,6 +17,16 @@ module cpu (
     input [31:0] mem_rdata;
     output reg [31:0] mem_wdata;
     output reg [3:0] mem_wstrb;
+
+    output reg cpi_valid;
+    input cpi_ready;
+    input cpi_wait;
+    output [31:0] cpi_inst;
+    output [31:0] cpi_r1;
+    output [31:0] cpi_r2;
+    input [31:0] cpi_data;
+    input cpi_drop;
+    reg [3:0] cpi_cnt;
 
     reg [3:0] state;
     reg [31:0] pc;
@@ -23,11 +38,17 @@ module cpu (
     wire [3:0] subop;
     wire [15:0] imm16;
     wire [31:0] imm16_sx;
+    wire [23:0] imm24;
+    wire [31:0] imm24_sx;
     wire [27:0] imm28;
     wire [31:0] imm28_sx;
 
     assign {op, subop, r1, r2, imm16} = inst;
     assign imm16_sx = {{16{imm16[15]}}, imm16};
+
+    assign imm24 = inst[23:0];
+    assign imm24_sx = {{8{imm24[23]}}, imm28};
+
     assign imm28 = inst[27:0];
     assign imm28_sx = {{4{imm28[27]}}, imm28};
 
@@ -49,16 +70,20 @@ module cpu (
         .rdata2(belt_rdata2)
     );
 
+    assign cpi_inst = cpi_valid ? inst : 32'hxxxxxxxx;
+    assign cpi_r1 = cpi_valid ? belt_rdata1 : 32'hxxxxxxxx;
+    assign cpi_r2 = cpi_valid ? belt_rdata2 : 32'hxxxxxxxx;
+    
+
     localparam  ST_FETCH=0,
-                //ST_WAIT_MEM=1,
-                ST_DECODE=2,
-                ST_ALU=3,
-                ST_ALUI=4,
-                ST_NEXT=5,
-                ST_BRANCH=6,
-                ST_MEM=7,
-                ST_MEM_WRITE=8,
-                ST_MEM_READ=9;
+                ST_DECODE=1,
+                ST_ALU=2,
+                ST_ALUI=3,
+                ST_BRANCH=4,
+                ST_MEM=5,
+                ST_MEM_WRITE=6,
+                ST_MEM_READ=7,
+                ST_COPROC=8;
 
     localparam  OP_DROP=0,
                 OP_DROPREL=1,
@@ -72,14 +97,13 @@ module cpu (
             state <= ST_FETCH;
             belt_drop <= 0;
             mem_valid <= 0;
-            mem_wstrb <= 0;
-            mem_wdata <= 0;
             inst <= 0;
         end else case(state)
         ST_FETCH: begin
             belt_drop <= 0;
             if(!mem_ready) begin
                 mem_valid <= 1;
+                mem_wstrb <= 0;
                 mem_addr <= pc;
             end else begin
                 pc <= pc + 4;
@@ -104,6 +128,11 @@ module cpu (
             OP_ALUI: state <= ST_ALUI;
             OP_BRANCH: state <= ST_BRANCH;
             OP_MEM: state <= ST_MEM;
+            default: if(CPI_ENABLE) begin
+                cpi_valid <= 1;
+                cpi_cnt <= 15;
+                state <= ST_COPROC;
+            end else state <= ST_FETCH;
         endcase
 
         ST_BRANCH: begin
@@ -120,7 +149,7 @@ module cpu (
 
         ST_MEM: begin
             mem_valid <= 1;
-            mem_addr <= belt_rdata1[31:2];
+            mem_addr <= belt_rdata1[31:2] + imm16_sx;
             if(subop[3]) begin
                 case(subop[2:0])
                     0: begin // write dword
@@ -145,13 +174,13 @@ module cpu (
                     end
                 endcase
             end else begin
+                mem_wstrb <= 0;
                 state <= ST_MEM_READ;
             end
         end
 
         ST_MEM_WRITE: if(mem_ready) begin
             mem_valid <= 0;
-            mem_wstrb <= 0;
             state <= ST_FETCH;
         end
 
@@ -163,7 +192,6 @@ module cpu (
                 3: belt_wdata <= mem_rdata; // read dword / xchg instruction from write.
             endcase
             mem_valid <= 0;
-            mem_wstrb <= 0;
             belt_drop <= 1;
             state <= ST_FETCH;
         end
@@ -197,6 +225,18 @@ module cpu (
             belt_drop <= 1;
             state <= ST_FETCH;
         end
+        
+        ST_COPROC: if(cpi_ready) begin
+            // coprocessor ready, drop result, goto fetch.
+            cpi_valid <= 0;
+            belt_drop <= cpi_drop;
+            belt_wdata <= cpi_data;
+            state <= ST_FETCH;
+        end else if(cpi_cnt == 0) begin
+            state <= ST_FETCH;
+        end else if(!cpi_wait) begin
+            cpi_cnt = cpi_cnt - 1;
+        end
     endcase
 endmodule
 
@@ -215,6 +255,12 @@ module belt (clk, rst, drop, wdata, r1, rdata1, r2, rdata2);
     reg [31:0] belt [0:15];
     reg [3:0] idx;
 
+    initial begin
+        belt[0] <= 0;  belt[1] <= 0;  belt[2] <= 0;  belt[3] <= 0;
+        belt[4] <= 0;  belt[5] <= 0;  belt[6] <= 0;  belt[7] <= 0;
+        belt[8] <= 0;  belt[9] <= 0;  belt[10] <= 0; belt[11] <= 0;
+        belt[12] <= 0; belt[13] <= 0; belt[14] <= 0; belt[15] <= 0;
+    end
 
     always @(posedge clk) begin
         if(rst) begin
