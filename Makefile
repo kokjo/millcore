@@ -14,3 +14,5 @@ soc.test: testbench_soc.v soc.v cpu.v
 soc.vcd: soc.test
 	./soc.test
 
+clean:
+	rm -f *.asc *.blif *.bin *.test *.vcd *.rpt *.log
