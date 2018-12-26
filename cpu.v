@@ -148,8 +148,8 @@ module cpu (
             case(subop)
                 4'h0: if(|belt_rdata1) pc <= belt_rdata2;     // b.nz r1, r2
                 4'h1: if(|belt_rdata1) pc <= pc+imm16_sx;     // b.nz r1, off
-                3'h2: if(belt_rdata1 == 0) pc <= belt_rdata2; // b.z r1, r2
-                3'h2: if(belt_rdata1 == 0) pc <= pc+imm16_sx; // b.z r1, r2
+                4'h2: if(belt_rdata1 == 0) pc <= belt_rdata2; // b.z r1, r2
+                4'h3: if(belt_rdata1 == 0) pc <= pc+imm16_sx; // b.z r1, off
                 4'h4: pc <= belt_rdata2;                      // jmp r2
                 4'h5: pc <= pc + imm16_sx;                    // jmp off
             endcase
