@@ -28,7 +28,7 @@ module cpu (
     input cpi_drop;
     reg [3:0] cpi_cnt;
 
-    reg [3:0] state;
+    reg [2:0] state;
     reg [31:0] pc;
     reg [31:0] inst;
 
@@ -70,6 +70,10 @@ module cpu (
         .rdata2(belt_rdata2)
     );
 
+    reg sel_rdata2;
+    wire [31:0] op2;
+    assign op2 = sel_rdata2 ? belt_rdata2 : imm16_sx;
+
     assign cpi_inst = cpi_valid ? inst : 32'hxxxxxxxx;
     assign cpi_r1 = cpi_valid ? belt_rdata1 : 32'hxxxxxxxx;
     assign cpi_r2 = cpi_valid ? belt_rdata2 : 32'hxxxxxxxx;
@@ -78,12 +82,11 @@ module cpu (
     localparam  ST_FETCH=0,
                 ST_DECODE=1,
                 ST_ALU=2,
-                ST_ALUI=3,
-                ST_BRANCH=4,
-                ST_MEM=5,
-                ST_MEM_WRITE=6,
-                ST_MEM_READ=7,
-                ST_COPROC=8;
+                ST_BRANCH=3,
+                ST_MEM=4,
+                ST_MEM_WRITE=5,
+                ST_MEM_READ=6,
+                ST_COPROC=7;
 
     localparam  OP_DROP=0,
                 OP_DROPREL=1,
@@ -124,8 +127,14 @@ module cpu (
                 belt_drop <= 1;
                 state <= ST_FETCH;
             end
-            OP_ALU: state <= ST_ALU;
-            OP_ALUI: state <= ST_ALUI;
+            OP_ALU: begin
+                sel_rdata2 <= 1;
+                state <= ST_ALU;
+            end
+            OP_ALUI: begin
+                sel_rdata2 <= 0;
+                state <= ST_ALU;
+            end
             OP_BRANCH: state <= ST_BRANCH;
             OP_MEM: state <= ST_MEM;
             default: if(CPI_ENABLE) begin
@@ -198,28 +207,13 @@ module cpu (
 
         ST_ALU: begin
             case(subop)
-                4'h0: belt_wdata <= belt_rdata1 + belt_rdata2;  // add r1, r2
-                4'h1: belt_wdata <= belt_rdata1 - belt_rdata2;  // sub r1, r2
-                4'h2: belt_wdata <= belt_rdata1 | belt_rdata2;  // or  r1, r2
-                4'h3: belt_wdata <= belt_rdata1 & belt_rdata2;  // and r1, r2
-                4'h4: belt_wdata <= belt_rdata1 ^ belt_rdata2;  // xor r1, r2
-                4'h5: belt_wdata <= belt_rdata1 == belt_rdata2; // eq  r1, r2
-                4'h6: belt_wdata <= belt_rdata1 <= belt_rdata2; // leq r1, r2
-                default: belt_wdata <= 32'hxxxxxxxx;
-            endcase
-            belt_drop <= 1;
-            state <= ST_FETCH;
-        end
-
-        ST_ALUI: begin
-            case(subop)
-                4'h0: belt_wdata <= belt_rdata1 + imm16_sx;  // add r1, imm
-                4'h1: belt_wdata <= belt_rdata1 - imm16_sx;  // sub r1, imm
-                4'h2: belt_wdata <= belt_rdata1 | imm16_sx;  // or  r1, imm
-                4'h3: belt_wdata <= belt_rdata1 & imm16_sx;  // and r1, imm
-                4'h4: belt_wdata <= belt_rdata1 ^ imm16_sx;  // xor r1, imm
-                4'h5: belt_wdata <= belt_rdata1 == imm16_sx; // eq  r1, imm
-                4'h6: belt_wdata <= belt_rdata1 <= imm16_sx; // leq r1, imm
+                4'h0: belt_wdata <= belt_rdata1 + op2;  // add r1, {imm, r2}
+                4'h1: belt_wdata <= belt_rdata1 - op2;  // sub r1, {imm, r2}
+                4'h2: belt_wdata <= belt_rdata1 | op2;  // or  r1, {imm, r2}
+                4'h3: belt_wdata <= belt_rdata1 & op2;  // and r1, {imm, r2}
+                4'h4: belt_wdata <= belt_rdata1 ^ op2;  // xor r1, {imm, r2}
+                4'h5: belt_wdata <= belt_rdata1 == op2; // eq  r1, {imm, r2}
+                4'h6: belt_wdata <= belt_rdata1 <= op2; // leq r1, {imm, r2}
                 default: belt_wdata <= 32'hxxxxxxxx;
             endcase
             belt_drop <= 1;
